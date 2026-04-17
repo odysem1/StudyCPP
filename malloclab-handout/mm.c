@@ -2,6 +2,7 @@
 -----------------------
 version 0.2
 TO-DO: implement find_fit, place function
+and change readme style
 -----------------------
 */
 
@@ -49,7 +50,7 @@ team_t team = {
 #define PUT(p, val) (*(unsigned int *)(p) = val)
 
 /*Read the size and allocated fields form address p*/
-#define GET_SIZE(p)     (GET(p) & -0x7)
+#define GET_SIZE(p)     (GET(p) & ~0x7)
 #define GET_ALLOC(p)    (GET(p) & 0x1)
 
 /*Given block ptr bp, compute address of its header and footer*/
@@ -76,6 +77,10 @@ static char *heap_listp;
 /*
 * Helper functions - Heap management
 */
+static void *extend_heap(size_t words);
+static void *coalesce(void *bp);
+static void *find_fit(size_t asize);
+static void place(void *bp, size_t asize);
 
 /*
 * extend_heap - Extends heap by calling mem_sbrk
@@ -108,7 +113,6 @@ static void *coalesce(void *bp){
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-
     /*Case 1*/
     if (prev_alloc && next_alloc){
         return bp;
@@ -122,33 +126,62 @@ static void *coalesce(void *bp){
     }
 
     /*Case 3*/
-    else if (prev_alloc && !next_alloc){
+    else if (!prev_alloc && next_alloc){
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREB_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
     }
 
     /*Case 4*/
     else{
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
+        PUT(HDRP(bp), PACK(size, 0));
+        PUT(FTRP(bp), PACK(size, 0));
     }
     return bp;  
 
 }
 
-/*TO-DO: implement find_fit(First-fit)*/
+/*
+* find-fit: find allocatable block(first-fit)
+*/
 static void *find_fit(size_t asize){
-    return NULL;
+    void *bp;
+    
+    /*heap_listp(start) to epiloge(size 0)*/
+    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
+        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))){
+            return bp;
+        }
+    }
+
+    return NULL;    /*NO HIT*/
 }
 
-/*TO_DO: implement place function*/
+/*
+* place: allocate the memory
+*    if the needed size is smalller than the block, then
+*    divide the block and allocate only the needed size
+*/
 static void place(void *bp, size_t asize){
+    /*Check size of the current block*/
+    size_t csize = GET_SIZE(HDRP(bp));
+    if ((csize - asize) >= (2*DSIZE)){
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
 
+        bp = NEXT_BLKP(bp);
+        PUT(HDRP(bp), PACK(csize - asize, 0));
+        PUT(FTRP(bp), PACK(csize - asize, 0));
+    }
+    else{
+        PUT(HDRP(bp), PACK(csize, 1));
+        PUT(FTRP(bp), PACK(csize, 1));
+    }
 }
+
 /*--------------------------------------------*/
 
 /* 
@@ -157,7 +190,7 @@ static void place(void *bp, size_t asize){
 int mm_init(void){
 
     /*Create the initial empty heap*/
-    if ((heap_listp = mem_sbrk(4*WSIZE)) == (void *)-1)
+    if ((heap_listp = (char *)mem_sbrk(4*WSIZE)) == (char *)-1)
         return -1;
     PUT(heap_listp, 0);                             /*Alignment padding*/
     PUT(heap_listp + (1*WSIZE), PACK(DSIZE, 1));    /*Prologue header*/
@@ -219,18 +252,31 @@ void mm_free(void *bp){
 }
 
 /*
- * mm_realloc - Implemented simply in terms of mm_malloc and mm_free
+ * mm_realloc - reallocate the memory in given size
  */
-void *mm_realloc(void *ptr, size_t size){
 
-    void *oldptr = ptr;
+void *mm_realloc(void *bp, size_t size){
+
+    void *oldptr = bp;
     void *newptr;
     size_t copySize;
     
+    /*Same as malloc if bp is null*/
+    if (bp == NULL) return mm_malloc(size);
+
+    /*Free memory if size is 0*/
+    if (size == 0){
+        mm_free(bp);
+        return NULL;
+    }
+
+    /*Allocate memory first*/
     newptr = mm_malloc(size);
     if (newptr == NULL)
       return NULL;
-    copySize = *(size_t *)((char *)oldptr - SIZE_T_SIZE);
+
+    /*Check old size, copy and free*/
+    copySize = GET_SIZE(HDRP(oldptr)) - DSIZE;
     if (size < copySize)
       copySize = size;
     memcpy(newptr, oldptr, copySize);
