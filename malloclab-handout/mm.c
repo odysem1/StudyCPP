@@ -1,7 +1,7 @@
 /*
 -----------------------
-version 0.2
-TO-DO: Change to Explicit free list & first-fit
+version 0.3
+TO-DO: Change to best-fit, modify realloc
 -----------------------
 */
 
