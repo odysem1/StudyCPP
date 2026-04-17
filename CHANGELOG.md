@@ -44,7 +44,9 @@
 
 - `putFreeBlock/removeFreeBlock`: 매크로를 이용해 Free block list에 새로운 블럭을 추가/제거하는 함수 추가
 
-### Changed: coalesce, place
+### Changed: coalesce, place, WSIZE&DSIZE
+
+-`WSIZE & DSIZE`: 64비트 체제 적용을 위해 각각 8, 16으로 2배 늘림.
 
 - `coalesce`: putFreeBlock/removeFreeBlock을 호출해 Free block list에 접근하는 기능 추가, 보기 편하도록 bp 변수 update 타이밍을 바꿔 그에 맞게 몇가지 코드 업데이트
 

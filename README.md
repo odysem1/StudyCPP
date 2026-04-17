@@ -58,11 +58,18 @@ Modern C++에서는 메모리 누수를 막기 위해 **스마트 포인터**를
 * `Solve`: GDB를 활용해 디버깅 후, 처음 init부터 Segment error가 발생한다는 것을 파악함, GET_SIZE 매크로에서 ~0x7을 -0x7이라고 타이핑한 오타를 찾고 수정함.
 * `Learned`: Segment error 디버깅 시에 기초적인 GDB 활용법을 연습할 수 있었음.
 
-### Issue 2: 포인터 업데이트 순서 오류(v0.3)
+### Issue 2: 포인터 크기 문제 - 64비트(v0.3)
+
+* `Problem`: mm_init 단계부터 Segmentation error 발생
+* `Solve`: 32비트 체제가 아닌 64비트 체제를 사용하다 보니, Implict list때는 괜찮았지만 Explicit list에서는 void\*\*를 사용하다 보니 void\*의 크기가 4비트가 아닌 8비트라 문제가 발생해서 WSIZE, DSIZE를 각각 8, 16비트로 수정함.
+* `Learned`: 64비트와 32비트 체제에서 코딩할 때 low-level에서 메모리를 다룰 때 타입별로 크기가 다를 수 있으므로 주의해야 한다.
+
+### Issue 3: 포인터 업데이트 순서 오류(v0.3)
 
 * `Problem`: coalesce를 활용하는 특정 Testcase에서 Segment error 발생.
-* `Solve`: GDB해 디버깅 후 coalesce의 4가지 케이스 중 case 3와 4에서 잘못된 PUT 호출을 발견, Explicit free list를 구현하며 bp 포인터 값을 업데이트하는 시점을 바꿨는데 그것 때문이라고 판단해 PUT에 들어가는 변수값 수정
+* `Solve`: GDB 디버깅 후 coalesce의 4가지 케이스 중 case 3와 4에서 잘못된 PUT 호출을 발견, Explicit free list를 구현하며 bp 포인터 값을 업데이트하는 시점을 바꿨는데 그것 때문이라고 판단해 PUT에 들어가는 변수값 수정
 * `Learned`: 코드를 변경하면 늘 그것에 영향받을 수 있는 다른 부분을 생각하며 코딩하기.
+
 
 
 ## Test result
