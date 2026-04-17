@@ -9,7 +9,7 @@
 ## [v0.2] / 2026-04-15
 
 
-### CS:APP 참고 및 기본 Implict free list 구현
+### CS:APP 참고 및 기본 Implict free list(first-fit) 구현
 
 ### Added: extend_heap, coalesce, find_fit, place
 
@@ -30,3 +30,22 @@
 - `mm_malloc`: naive 코드 제거, find_fit 및 place 함수 호출
 
 - `mm_realloc`: naive 코드 제거, find_fit 및 place, free 함수 호출
+
+
+## [v0.3] / 2026-04-17
+
+### Explicit free list(first-fit) 구현
+
+### Added: free_listp, MACROs ,putFreeBlock, removeFreeBLock
+
+- `free_listp`: Free list의 맨 앞에 있는 블럭을 가리키는 포인터
+
+- `MACROs`: Doubly linked list를 구현하기 위해 앞/뒤 가용 블럭을 다루는 매크로들 추가
+
+- `putFreeBlock/removeFreeBlock`: 매크로를 이용해 Free block list에 새로운 블럭을 추가/제거하는 함수 추가
+
+### Changed: coalesce, place
+
+- `coalesce`: putFreeBlock/removeFreeBlock을 호출해 Free block list에 접근하는 기능 추가, 보기 편하도록 bp 변수 update 타이밍을 바꿔 그에 맞게 몇가지 코드 업데이트
+
+- `place`: 메모리를 배정할 때 removeFreeBlock 호출로 Free block list 업데이트, 블럭을 나눠서 배정했을 때 남은 부분은 도로 putFreeBlock을 호출해 다시 집어넣음

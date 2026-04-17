@@ -52,11 +52,17 @@ Modern C++에서는 메모리 누수를 막기 위해 **스마트 포인터**를
 
 ## TroubleShooting
 
-### Issue 1: Bitmask error
+### Issue 1: Bitmask error(v0.2)
 
 * `Problem`: 모든 Testcase에서 Segment error 발생.
 * `Solve`: GDB를 활용해 디버깅 후, 처음 init부터 Segment error가 발생한다는 것을 파악함, GET_SIZE 매크로에서 ~0x7을 -0x7이라고 타이핑한 오타를 찾고 수정함.
 * `Learned`: Segment error 디버깅 시에 기초적인 GDB 활용법을 연습할 수 있었음.
+
+### Issue 2: 포인터 업데이트 순서 오류(v0.3)
+
+* `Problem`: coalesce를 활용하는 특정 Testcase에서 Segment error 발생.
+* `Solve`: GDB해 디버깅 후 coalesce의 4가지 케이스 중 case 3와 4에서 잘못된 PUT 호출을 발견, Explicit free list를 구현하며 bp 포인터 값을 업데이트하는 시점을 바꿨는데 그것 때문이라고 판단해 PUT에 들어가는 변수값 수정
+* `Learned`: 코드를 변경하면 늘 그것에 영향받을 수 있는 다른 부분을 생각하며 코딩하기.
 
 
 ## Test result
@@ -64,6 +70,7 @@ Modern C++에서는 메모리 누수를 막기 위해 **스마트 포인터**를
 | Version | Strategy | Util | Thru | Total |
 | :--- | :--- | :---: | :---: | :---: |
 | v0.2 | Implicit List (First-fit) | 44 | 16 | 61 |
+| v0.3 | Explicit List (First-fit) | 42 | 40 | 82 |
 
 
 

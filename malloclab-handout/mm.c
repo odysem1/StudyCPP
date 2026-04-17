@@ -1,8 +1,7 @@
 /*
 -----------------------
 version 0.2
-TO-DO: implement find_fit, place function
-and change readme style
+TO-DO: Change to Explicit free list & first-fit
 -----------------------
 */
 
@@ -36,8 +35,8 @@ team_t team = {
 
 
 /* Basic constants and macros*/
-#define WSIZE 4             /*Word and header/footer size (bytes)*/
-#define DSIZE 8             /*Double word size (bytes)*/
+#define WSIZE 8             /*Word and header/footer size (bytes)*/
+#define DSIZE 16             /*Double word size (bytes)*/
 #define CHUNKSIZE (1<<12)   /*Extend heap by this amount (bytes)*/
 
 #define MAX(x, y) ((x) > (y) ? (x):(y))
@@ -67,11 +66,54 @@ team_t team = {
 /* rounds up to the nearest multiple of ALIGNMENT */
 #define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
 
+/*Macros for implementing doubly linked list*/
+#define GET_NEXT_FREE(bp) (*(void **)(bp + WSIZE))
+#define GET_PREV_FREE(bp) (*(void **)(bp))
+#define SET_NEXT_FREE(bp, ptr) (*(void **)(bp + WSIZE) = (ptr))
+#define SET_PREV_FREE(bp, ptr) (*(void **)(bp) = (ptr))
+
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
 
-/*Address of the start of the heap*/
+/*Address of the start of the heap & first free block*/
 static char *heap_listp;
+static char *free_listp;
+
+
+/*
+* Helper functions - Free block list management
+*/
+
+static void putFreeBlock(void *bp);
+static void removeFreeBlock(void *bp);
+
+/*
+* putFreeBlock - put Free block in free block list
+*/
+static void putFreeBlock(void *bp){
+    SET_NEXT_FREE(bp, free_listp);
+    SET_PREV_FREE(bp, NULL);
+
+    if (free_listp != NULL){
+        SET_PREV_FREE(free_listp, bp);
+    }
+    free_listp = bp;
+}
+
+/*
+* removeFreeBlock - remove Free block in free block list
+*/
+static void removeFreeBlock(void *bp){
+    if (bp == free_listp){
+        free_listp = GET_NEXT_FREE(bp);
+    }else{
+        SET_NEXT_FREE(GET_PREV_FREE(bp), GET_NEXT_FREE(bp));
+    }
+
+    if (GET_NEXT_FREE(bp) != NULL){
+        SET_PREV_FREE(GET_NEXT_FREE(bp), GET_PREV_FREE(bp));
+    }
+}
 
 
 /*
@@ -106,6 +148,8 @@ static void *extend_heap(size_t words){
 
 /*
 * coalesce - connects the adjacent free blocks
+*   Also Removes previous free block and add new free block on
+*   free block list
 */
 
 static void *coalesce(void *bp){
@@ -113,13 +157,11 @@ static void *coalesce(void *bp){
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
-    /*Case 1*/
-    if (prev_alloc && next_alloc){
-        return bp;
-    }
+    /*case 1: prev and next allocated, do nothing*/
 
     /*Case 2*/
-    else if (prev_alloc && !next_alloc){
+    if (prev_alloc && !next_alloc){
+        removeFreeBlock(NEXT_BLKP(bp));
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
         PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
@@ -127,19 +169,24 @@ static void *coalesce(void *bp){
 
     /*Case 3*/
     else if (!prev_alloc && next_alloc){
+        removeFreeBlock(PREV_BLKP(bp));
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        bp = PREV_BLKP(bp);
-        PUT(HDRP(bp), PACK(size, 0));
         PUT(FTRP(bp), PACK(size, 0));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        bp = PREV_BLKP(bp);
     }
 
     /*Case 4*/
-    else{
+    else if (!prev_alloc && !next_alloc){
+        removeFreeBlock(PREV_BLKP(bp));
+        removeFreeBlock(NEXT_BLKP(bp));
         size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
+        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+        PUT(FTRP(PREV_BLKP(bp)), PACK(size, 0));
         bp = PREV_BLKP(bp);
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size, 0));
     }
+
+    putFreeBlock(bp);
     return bp;  
 
 }
@@ -151,8 +198,8 @@ static void *find_fit(size_t asize){
     void *bp;
     
     /*heap_listp(start) to epiloge(size 0)*/
-    for (bp = heap_listp; GET_SIZE(HDRP(bp)) > 0; bp = NEXT_BLKP(bp)){
-        if (!GET_ALLOC(HDRP(bp)) && (asize <= GET_SIZE(HDRP(bp)))){
+    for (bp = free_listp; bp != NULL; bp = GET_NEXT_FREE(bp)){
+        if (asize <= GET_SIZE(HDRP(bp))){
             return bp;
         }
     }
@@ -164,17 +211,19 @@ static void *find_fit(size_t asize){
 * place: allocate the memory
 *    if the needed size is smalller than the block, then
 *    divide the block and allocate only the needed size
+*    Also removes & adds new free block
 */
 static void place(void *bp, size_t asize){
     /*Check size of the current block*/
     size_t csize = GET_SIZE(HDRP(bp));
+    removeFreeBlock(bp);
     if ((csize - asize) >= (2*DSIZE)){
         PUT(HDRP(bp), PACK(asize, 1));
         PUT(FTRP(bp), PACK(asize, 1));
-
         bp = NEXT_BLKP(bp);
         PUT(HDRP(bp), PACK(csize - asize, 0));
         PUT(FTRP(bp), PACK(csize - asize, 0));
+        putFreeBlock(bp);
     }
     else{
         PUT(HDRP(bp), PACK(csize, 1));
@@ -197,6 +246,8 @@ int mm_init(void){
     PUT(heap_listp + (2*WSIZE), PACK(DSIZE, 1));    /*Prologue footer*/
     PUT(heap_listp + (3*WSIZE), PACK(0, 1));        /*Epilogue header*/
     heap_listp += (2*WSIZE);
+
+    free_listp = NULL;  /*Free block list init*/
 
     /*Extend the empty heap with a free block of CHUNKSIZE bytes*/
     if (extend_heap(CHUNKSIZE/WSIZE) == NULL)
@@ -240,6 +291,7 @@ void *mm_malloc(size_t size){
 
 /*
  * mm_free - Free a block at pointer bp
+ *      puts Block in a free list
  */
 
 void mm_free(void *bp){
