@@ -70,7 +70,11 @@ Modern C++에서는 메모리 누수를 막기 위해 **스마트 포인터**를
 * `Solve`: GDB 디버깅 후 coalesce의 4가지 케이스 중 case 3와 4에서 잘못된 PUT 호출을 발견, Explicit free list를 구현하며 bp 포인터 값을 업데이트하는 시점을 바꿨는데 그것 때문이라고 판단해 PUT에 들어가는 변수값 수정
 * `Learned`: 코드를 변경하면 늘 그것에 영향받을 수 있는 다른 부분을 생각하며 코딩하기.
 
+### Issue 4: 포인터 크기 문제 2 - (v0.4)
 
+* `Problem`: mm_init 단계부터 Segmentation error 발생
+* `Solve`: 32비트 체제가 아닌 64비트 체제를 사용하다 보니, Implict list때는 괜찮았지만 Explicit list에서는 void\*\*를 사용하다 보니 void\*의 크기가 4비트가 아닌 8비트라 문제가 발생해서 8비트 데이터를 불러오고 업데이트하기 위한 GET_ADDR랑 PUT_ADDR 매크로를 따로 만듬
+* `Learned`: 64비트와 32비트 체제의 차이를 주의해야 한다는 점을 다시 상기함
 
 ## Test result
 
@@ -78,6 +82,7 @@ Modern C++에서는 메모리 누수를 막기 위해 **스마트 포인터**를
 | :--- | :--- | :---: | :---: | :---: |
 | v0.2 | Implicit List (First-fit) | 44 | 16 | 61 |
 | v0.3 | Explicit List (First-fit) | 42 | 40 | 82 |
+| v0.4 | Segragated list (First-fit) | 44 | 40 | 84 |
 
 
 

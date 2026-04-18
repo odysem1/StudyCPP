@@ -51,3 +51,26 @@
 - `coalesce`: putFreeBlock/removeFreeBlock을 호출해 Free block list에 접근하는 기능 추가, 보기 편하도록 bp 변수 update 타이밍을 바꿔 그에 맞게 몇가지 코드 업데이트
 
 - `place`: 메모리를 배정할 때 removeFreeBlock 호출로 Free block list 업데이트, 블럭을 나눠서 배정했을 때 남은 부분은 도로 putFreeBlock을 호출해 다시 집어넣음
+
+## [v0.4] / 2026-04-18
+
+### Segregated free list(first-fit) 구현
+
+### Added: GET/SET_ADDR, get_index, insert/removeNode
+
+- `GET/SET_ADDR`: 64비트 환경에서는 PUT으로 그대로 변수를 넣으면 void *와 int의 크기 차이로 오류가 발생할 수 있으므로 지정한 주소에 void * 값을 넣는 매크로를 따로 만듬
+
+- `get_index`: 블럭의 크기를 입력으로 받아 어떤 크기의 List부터 탐색할지 index를 반환함(malloc lab trace file에 최적화되도록 그냥 if/else로 구현)
+
+- `insert/removeNode`: Segregated free list에 가용 블럭을 넣고 빼는 함수를 추가함.
+
+### Changed: find_fit, mm_init
+
+- `find_fit`: 블럭의 크기에 맞춰 적당한 index의 free list부터 탐색하며 시간을 절약하도록 수정
+
+- `mm_init`: Heap 맨 앞 LIST_LIMIT만큼의 칸을 segregated list에게 배정하고 그 뒤에 Heap을 initialize하도록 변경
+
+### Removed: putFreeBlock, removeFreeBlock
+
+- Segregated free list로 strategy를 변경했으므로 삭제
+
