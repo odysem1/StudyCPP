@@ -1,7 +1,7 @@
 /*
 -----------------------
-version 0.4
-TO-DO: Change to best-fit, modify realloc
+version 0.4.1
+TO-DO: Change to best-fit
 -----------------------
 */
 
@@ -96,6 +96,22 @@ static char *st_heap_start;
 static void insertNode(void *bp);
 static void removeNode(void *bp);
 int get_index(size_t size);
+size_t get_size(size_t size);
+
+/*
+* get_size - make size aligned
+*/
+size_t get_size(size_t size){
+    size_t asize;
+
+    if (size <= DSIZE){
+        asize = 2*DSIZE;
+    }else{
+        asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
+    }
+
+    return asize;
+}
 
 /*
 * get_index - find index of which list to put based on size
@@ -121,6 +137,7 @@ int get_index(size_t size){
     if (size <= 32768) return 16;
     if (size <= 65536) return 17;
     if (size <= 131072) return 18;
+
     return 19;
 }
 
@@ -330,10 +347,7 @@ void *mm_malloc(size_t size){
         return NULL;
 
     /*Adjust block size to include overhead and alignmnet reqs*/
-    if (size <= DSIZE)
-        asize = 2*DSIZE;
-    else
-        asize = DSIZE * ((size + DSIZE + (DSIZE-1)) / DSIZE);
+    asize = get_size(size);
 
     /*Search the free list for a fit*/
     if ((bp = find_fit(asize)) != NULL){
@@ -372,7 +386,15 @@ void *mm_realloc(void *bp, size_t size){
     void *oldptr = bp;
     void *newptr;
     size_t copySize;
-    
+
+    /*variables for next_block empty check*/
+    size_t old_size = GET_SIZE(HDRP(bp));
+    void *next_bp = NEXT_BLKP(bp);
+    size_t next_size = GET_SIZE(HDRP(next_bp));
+    size_t next_alloc = GET_ALLOC(HDRP(next_bp));
+    size_t asize = get_size(size);
+    size_t total_size = old_size + next_size;
+
     /*Same as malloc if bp is null*/
     if (bp == NULL) return mm_malloc(size);
 
@@ -382,13 +404,45 @@ void *mm_realloc(void *bp, size_t size){
         return NULL;
     }
 
+    /*if size is big enough*/
+    if (old_size >= asize){
+        return bp;
+    }
+
+    /*If next block is empty*/
+    if(!next_alloc && (total_size >= asize)){
+        removeNode(next_bp);
+        if (total_size - asize >= (2*DSIZE)){
+            PUT(HDRP(bp), PACK(asize, 1));
+            PUT(FTRP(bp), PACK(asize, 1));
+            void *remain_bp = NEXT_BLKP(bp);
+            PUT(HDRP(remain_bp), PACK(total_size - asize, 0));
+            PUT(FTRP(remain_bp), PACK(total_size - asize, 0));
+            coalesce(remain_bp);
+        }else{
+            PUT(HDRP(bp), PACK(total_size, 1));
+            PUT(FTRP(bp), PACK(total_size, 1));
+        }
+        return bp;
+    }
+    
+    /*if bp is the last block*/
+    else if(next_size == 0){
+        size_t extend_size = asize - old_size;
+        if (extend_heap(extend_size / WSIZE) == NULL)
+            return NULL;
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        return bp;
+    }
+
     /*Allocate memory first*/
     newptr = mm_malloc(size);
     if (newptr == NULL)
       return NULL;
 
     /*Check old size, copy and free*/
-    copySize = GET_SIZE(HDRP(oldptr)) - DSIZE;
+    copySize = old_size - DSIZE;
     if (size < copySize)
       copySize = size;
     memcpy(newptr, oldptr, copySize);

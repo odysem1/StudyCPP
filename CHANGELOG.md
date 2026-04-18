@@ -74,3 +74,14 @@
 
 - Segregated free list로 strategy를 변경했으므로 삭제
 
+## [v0.4.1] / 2026-04-18
+
+### Realloc 수정
+
+### Added: get_size
+
+- size를 입력받아 최소 블럭 크기인 16비트를 고려해 allocate할 size를 계산해주는 함수 추가
+
+### Changed: mm_realloc
+
+- free block을 탐색하기 전에 바로 뒷 블록을 살펴보는 매커니즘과 뒷 블럭이 없으면 heap을 extend시키는 부분을 추가해 Throughput을 향상시킴

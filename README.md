@@ -83,6 +83,7 @@ Modern C++에서는 메모리 누수를 막기 위해 **스마트 포인터**를
 | v0.2 | Implicit List (First-fit) | 44 | 16 | 61 |
 | v0.3 | Explicit List (First-fit) | 42 | 40 | 82 |
 | v0.4 | Segragated list (First-fit) | 44 | 40 | 84 |
+| v0.4.1 | Segragated list (In-place Realloc & split) | 44 | 40 | 84 |
 
 
 
