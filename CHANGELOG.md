@@ -85,3 +85,21 @@
 ### Changed: mm_realloc
 
 - free block을 탐색하기 전에 바로 뒷 블록을 살펴보는 매커니즘과 뒷 블럭이 없으면 heap을 extend시키는 부분을 추가해 Throughput을 향상시킴
+
+## [v0.5] / 2026-04-25
+
+### Realloc 수정 및 Best-fit 구현
+
+### Added: split_block
+
+- 블럭 시작 위치와 가용 크기, 필요 크기를 입력받아 블럭을 나눠서 allocate하고 남은 부분은 free한 상태로 만들어주는 함수
+
+-place와 mm_realloc에서 중복된 알고리즘을 편리하게 사용하기 위해 구현
+
+### Changed: find_fit, mm_realloc, place
+
+- `find_fit`: best_fit 알고리즘 구현(Segregrated List 탐색)
+
+- `mm_realloc`: 다음 블럭, 이전 블럭을 전부 탐색하고 allocate 하도록 알고리즘 수정 및 end of heap일 때 최적화, split_block 적용
+
+- `place`: split_block 함수 적용

@@ -182,10 +182,31 @@ static void removeNode(void *bp){
 /*
 * Helper functions - Heap management
 */
+static void split_block(void *bp, size_t asize, size_t total_size);
 static void *extend_heap(size_t words);
 static void *coalesce(void *bp);
 static void *find_fit(size_t asize);
 static void place(void *bp, size_t asize);
+
+
+/*
+* split_block - splits free block to only use needed size
+*/
+static void split_block(void *bp, size_t asize, size_t total_size){
+    if ((total_size - asize) >= (2 * DSIZE)) {
+        PUT(HDRP(bp), PACK(asize, 1));
+        PUT(FTRP(bp), PACK(asize, 1));
+        
+        void *remain_bp = NEXT_BLKP(bp);
+        PUT(HDRP(remain_bp), PACK(total_size - asize, 0));
+        PUT(FTRP(remain_bp), PACK(total_size - asize, 0));
+        coalesce(remain_bp); 
+    } else {
+
+        PUT(HDRP(bp), PACK(total_size, 1));
+        PUT(FTRP(bp), PACK(total_size, 1));
+    }
+}
 
 /*
 * extend_heap - Extends heap by calling mem_sbrk
@@ -255,26 +276,36 @@ static void *coalesce(void *bp){
 }
 
 /*
-* find-fit: find allocatable block(first-fit)
+* find-fit: find allocatable block(best-fit)
 */
 static void *find_fit(size_t asize){
-    void *bp;
-    int idx = get_index(asize);
+    int root_idx = get_index(asize);
+    void *best_bp = NULL;
 
-    /*start from least-needed idx*/
-    while (idx < LIST_LIMIT){
-        bp = (void *)GET_ADDR(GET_SEG_LIST(idx));
-        
-        while(bp != NULL){
-            if (asize <= GET_SIZE(HDRP(bp))){
-                return bp;
+    /*check segregated list*/
+    for(int i = root_idx; i < LIST_LIMIT; i++){
+        void *bp = GET_ADDR(GET_SEG_LIST(i));
+
+        while (bp != NULL){
+            size_t block_size = GET_SIZE(HDRP(bp));
+            if (asize <= block_size){
+                /*best case(same size as needed)*/
+                if (asize == block_size){
+                    return bp;
+                }
+                /*smaller than current best block*/
+                if (best_bp == NULL || block_size < GET_SIZE(HDRP(best_bp))){
+                    best_bp = bp;
+                }
             }
             bp = GET_NEXT_FREE(bp);
         }
-        idx++;
-    }
 
-    return NULL;    /*NO HIT*/
+        if (best_bp != NULL){
+            return best_bp;
+        }
+    }
+    return NULL;
 }
 
 /*
@@ -287,18 +318,7 @@ static void place(void *bp, size_t asize){
     /*Check size of the current block*/
     size_t csize = GET_SIZE(HDRP(bp));
     removeNode(bp);
-    if ((csize - asize) >= (2*DSIZE)){
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
-        bp = NEXT_BLKP(bp);
-        PUT(HDRP(bp), PACK(csize - asize, 0));
-        PUT(FTRP(bp), PACK(csize - asize, 0));
-        insertNode(bp);
-    }
-    else{
-        PUT(HDRP(bp), PACK(csize, 1));
-        PUT(FTRP(bp), PACK(csize, 1));
-    }
+    split_block(bp, asize, csize);
 }
 
 /*--------------------------------------------*/
@@ -387,66 +407,88 @@ void *mm_realloc(void *bp, size_t size){
     void *newptr;
     size_t copySize;
 
-    /*variables for next_block empty check*/
-    size_t old_size = GET_SIZE(HDRP(bp));
-    void *next_bp = NEXT_BLKP(bp);
-    size_t next_size = GET_SIZE(HDRP(next_bp));
-    size_t next_alloc = GET_ALLOC(HDRP(next_bp));
-    size_t asize = get_size(size);
-    size_t total_size = old_size + next_size;
-
-    /*Same as malloc if bp is null*/
     if (bp == NULL) return mm_malloc(size);
-
-    /*Free memory if size is 0*/
     if (size == 0){
         mm_free(bp);
         return NULL;
     }
-
-    /*if size is big enough*/
-    if (old_size >= asize){
-        return bp;
-    }
-
-    /*If next block is empty*/
-    if(!next_alloc && (total_size >= asize)){
-        removeNode(next_bp);
-        if (total_size - asize >= (2*DSIZE)){
-            PUT(HDRP(bp), PACK(asize, 1));
-            PUT(FTRP(bp), PACK(asize, 1));
-            void *remain_bp = NEXT_BLKP(bp);
-            PUT(HDRP(remain_bp), PACK(total_size - asize, 0));
-            PUT(FTRP(remain_bp), PACK(total_size - asize, 0));
-            coalesce(remain_bp);
-        }else{
-            PUT(HDRP(bp), PACK(total_size, 1));
-            PUT(FTRP(bp), PACK(total_size, 1));
-        }
-        return bp;
-    }
     
-    /*if bp is the last block*/
-    else if(next_size == 0){
-        size_t extend_size = asize - old_size;
-        if (extend_heap(extend_size / WSIZE) == NULL)
-            return NULL;
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
+    size_t asize = get_size(size);
+    size_t old_size = GET_SIZE(HDRP(bp));
+
+    /*if old size is ok*/
+    if (old_size >= asize){
+        split_block(bp, asize, old_size);
         return bp;
     }
 
-    /*Allocate memory first*/
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
+    /*if next block is empty*/
+    void *next_bp = NEXT_BLKP(bp);
+    size_t next_size = GET_SIZE(HDRP(next_bp));
+    size_t next_alloc = GET_ALLOC(HDRP(next_bp));
+    size_t total_size = old_size + next_size;
 
-    /*Check old size, copy and free*/
+    if (!next_alloc && (total_size >= asize)){
+        removeNode(next_bp);
+        split_block(bp, asize, total_size);
+        return bp;
+    }
+
+    /*if prev block is empty*/
+    size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    size_t prev_size = prev_alloc ? 0 : GET_SIZE(FTRP(PREV_BLKP(bp)));
+
+    if (!prev_alloc && (prev_size + old_size >= asize)){
+        void *prev_bp = PREV_BLKP(bp);
+        removeNode(prev_bp);
+
+        memmove(prev_bp, bp, old_size - DSIZE);
+
+        split_block(prev_bp, asize, prev_size + old_size);
+        return prev_bp;
+    }
+
+    /*if prev and next is empty, and have to get all of them*/
+    if (!prev_alloc && !next_alloc && (prev_size + old_size + next_size >= asize)) {
+        void *prev_bp = PREV_BLKP(bp);
+        removeNode(prev_bp);
+        removeNode(next_bp);
+        
+        memmove(prev_bp, bp, old_size - DSIZE);
+        
+        split_block(prev_bp, asize, prev_size + old_size + next_size);
+        return prev_bp;
+    }
+
+    /*end of heap*/
+    int is_last_alloc = (next_size == 0) || (!next_alloc && GET_SIZE(HDRP(NEXT_BLKP(next_bp))) == 0);
+
+    if (is_last_alloc) {
+        size_t current_total = (!next_alloc) ? total_size : old_size;
+        size_t extend_size = asize - current_total;
+        
+        void *new_free_bp = extend_heap(extend_size / WSIZE);
+        if (new_free_bp == NULL) return NULL;
+        
+        // extend_heap이 눈치껏 뒷방(next_bp)과 새 공간을 합쳐서 리턴했으므로 한 번만 빼면 됩니다.
+        removeNode(new_free_bp); 
+        
+        size_t real_free_size = GET_SIZE(HDRP(new_free_bp));
+        size_t final_total = old_size + real_free_size;
+        
+        split_block(bp, asize, final_total);
+        return bp;
+    }
+
+    /*if none of the above case*/
+    newptr = mm_malloc(size);
+    if (newptr == NULL) return NULL;
+
     copySize = old_size - DSIZE;
-    if (size < copySize)
-      copySize = size;
+    if (size < copySize) copySize = size;
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
+    
     return newptr;
 }
 
