@@ -103,3 +103,19 @@
 - `mm_realloc`: 다음 블럭, 이전 블럭을 전부 탐색하고 allocate 하도록 알고리즘 수정 및 end of heap일 때 최적화, split_block 적용
 
 - `place`: split_block 함수 적용
+
+## [v0.6] / 2026-04-25
+
+### Boundary tag optimization 구현, CHUNKSIZE 수정
+
+### Added: PREV_ALLOC MARCROS
+
+- 비가용 블럭의 Footer를 없애는 대신 헤더에 이전 블럭 Allocation 정보를 표기하는 구조로 변경, 필요한 매크로 추가
+
+### Changed: get_size, PACK, Heap management functions, mm_init, CHUNKSIZE
+
+- `get_size`: 헤더 구조 변경으로 인한 블럭 최소 사이즈 변경
+
+- `PACK, Heap_managemnet functions, mm_init`: 헤더 구조 변경으로 인한 PACK 매크로 변경, 그에 다른 코드 수정
+
+- `CHUNKSIZE`: util 점수 상승을 위해 크기 하향 조정(1>>12 -> 1>>10)

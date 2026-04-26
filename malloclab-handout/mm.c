@@ -1,7 +1,7 @@
 /*
 -----------------------
-version 0.4.1
-TO-DO: Change to best-fit
+version 0.6
+TO-DO: Singly linked list block management
 -----------------------
 */
 
@@ -37,12 +37,9 @@ team_t team = {
 /* Basic constants and macros*/
 #define WSIZE 8             /*Word and header/footer size (bytes)*/
 #define DSIZE 16             /*Double word size (bytes)*/
-#define CHUNKSIZE (1<<12)   /*Extend heap by this amount (bytes)*/
+#define CHUNKSIZE (1<<10)   /*Extend heap by this amount (bytes)*/
 
 #define MAX(x, y) ((x) > (y) ? (x):(y))
-
-/*Pack a size and allocated bit into a word*/
-#define PACK(size, alloc) ((size) | (alloc))
 
 /*Read and write a word at address p*/
 #define GET(p)      (*(unsigned int *)(p))
@@ -61,7 +58,7 @@ team_t team = {
 #define FTRP(bp)    ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
 
 /*Given block ptr bp, compute address of next and previous blocks*/
-#define NEXT_BLKP(bp)   ((char *)(bp) + GET_SIZE(((char*)(bp)-WSIZE)))
+#define NEXT_BLKP(bp)   ((char *)(bp) + GET_SIZE(((char*)(bp) - WSIZE)))
 #define PREV_BLKP(bp)   ((char *)(bp) - GET_SIZE(((char *)(bp) - DSIZE)))
 
 /* single word (4) or double word (8) alignment */
@@ -75,6 +72,13 @@ team_t team = {
 #define GET_PREV_FREE(bp) (GET_ADDR(bp))
 #define SET_NEXT_FREE(bp, ptr) (PUT_ADDR((char *)(bp) + WSIZE, ptr))
 #define SET_PREV_FREE(bp, ptr) (PUT_ADDR(bp, ptr))
+
+/*Remove Footer - Boundary tag optimization*/
+#define PREV_ALLOC 0x2
+#define GET_PREV_ALLOC(p) ((GET(p) & PREV_ALLOC ) >> 1)
+#define PACK(size, prev_alloc, alloc) ((size) | (prev_alloc << 1) | alloc)
+#define SET_PREV_ALLOC(p) (*(unsigned int*)(p) |= PREV_ALLOC)
+#define CLEAR_PREV_ALLOC(p) (*(unsigned int*)(p) &= ~PREV_ALLOC)
 
 
 #define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
@@ -101,15 +105,14 @@ size_t get_size(size_t size);
 /*
 * get_size - make size aligned
 */
-size_t get_size(size_t size){
+size_t get_size(size_t size) {
     size_t asize;
 
-    if (size <= DSIZE){
-        asize = 2*DSIZE;
-    }else{
-        asize = DSIZE * ((size + (DSIZE) + (DSIZE - 1)) / DSIZE);
+    if (size <= DSIZE + WSIZE) {
+        asize = 2 * DSIZE;      
+    } else{
+        asize = DSIZE * ((size + WSIZE + (DSIZE - 1)) / DSIZE);
     }
-
     return asize;
 }
 
@@ -193,18 +196,20 @@ static void place(void *bp, size_t asize);
 * split_block - splits free block to only use needed size
 */
 static void split_block(void *bp, size_t asize, size_t total_size){
+
+    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
     if ((total_size - asize) >= (2 * DSIZE)) {
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
+        PUT(HDRP(bp), PACK(asize, prev_alloc, 1));
         
         void *remain_bp = NEXT_BLKP(bp);
-        PUT(HDRP(remain_bp), PACK(total_size - asize, 0));
-        PUT(FTRP(remain_bp), PACK(total_size - asize, 0));
-        coalesce(remain_bp); 
-    } else {
+        PUT(HDRP(remain_bp), PACK(total_size - asize, 1, 0));
+        PUT(FTRP(remain_bp), PACK(total_size - asize, 1, 0));
+        CLEAR_PREV_ALLOC(HDRP(NEXT_BLKP(remain_bp)));
 
-        PUT(HDRP(bp), PACK(total_size, 1));
-        PUT(FTRP(bp), PACK(total_size, 1));
+        coalesce(remain_bp);
+    } else {
+        PUT(HDRP(bp), PACK(total_size, prev_alloc, 1));
+        SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     }
 }
 
@@ -222,9 +227,11 @@ static void *extend_heap(size_t words){
         return NULL;
 
     /*Initialize free block header/footer and epilogue header*/
-    PUT(HDRP(bp), PACK(size, 0));   /*Free header*/
-    PUT(FTRP(bp), PACK(size, 0));   /*Free footer*/
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /*New epilogue header*/
+    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
+
+    PUT(HDRP(bp), PACK(size, prev_alloc, 0));   /*Free header*/
+    PUT(FTRP(bp), PACK(size, prev_alloc, 0));
+    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 0, 1)); /*New epilogue header*/
 
     /*Coalesce if the previous block was free*/
     return coalesce(bp);
@@ -237,7 +244,7 @@ static void *extend_heap(size_t words){
 */
 
 static void *coalesce(void *bp){
-    size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
+    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
     size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
     size_t size = GET_SIZE(HDRP(bp));
 
@@ -247,29 +254,36 @@ static void *coalesce(void *bp){
     if (prev_alloc && !next_alloc){
         removeNode(NEXT_BLKP(bp));
         size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        PUT(HDRP(bp), PACK(size, 0));
-        PUT(FTRP(bp), PACK(size, 0));
+        PUT(HDRP(bp), PACK(size, prev_alloc, 0));
+        PUT(FTRP(bp), PACK(size, prev_alloc, 0));
     }
 
     /*Case 3*/
     else if (!prev_alloc && next_alloc){
         removeNode(PREV_BLKP(bp));
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
-        PUT(FTRP(bp), PACK(size, 0));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
+
+        size_t prev_prev_alloc = GET_PREV_ALLOC(HDRP(PREV_BLKP(bp)));
         bp = PREV_BLKP(bp);
+        PUT(HDRP(bp), PACK(size, prev_prev_alloc, 0));
+        PUT(FTRP(bp), PACK(size, prev_prev_alloc, 0));
     }
 
     /*Case 4*/
     else if (!prev_alloc && !next_alloc){
         removeNode(PREV_BLKP(bp));
         removeNode(NEXT_BLKP(bp));
-        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(FTRP(NEXT_BLKP(bp)));
-        PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
-        PUT(FTRP(PREV_BLKP(bp)), PACK(size, 0));
-        bp = PREV_BLKP(bp);
-    }
+        size += GET_SIZE(HDRP(PREV_BLKP(bp))) + GET_SIZE(HDRP(NEXT_BLKP(bp)));
 
+        size_t prev_prev_alloc = GET_PREV_ALLOC(HDRP(PREV_BLKP(bp)));
+        bp = PREV_BLKP(bp);
+        PUT(HDRP(bp), PACK(size, prev_prev_alloc, 0));
+        PUT(FTRP(bp), PACK(size, prev_prev_alloc, 0));
+    }
+    void *next_merged = NEXT_BLKP(bp);
+    if (GET_SIZE(HDRP(next_merged)) > 0){
+        CLEAR_PREV_ALLOC(HDRP(next_merged));
+    }
     insertNode(bp);
     return bp;  
 
@@ -341,9 +355,9 @@ int mm_init(void){
 
     
     PUT(st_heap_start, 0);                             /*Alignment padding*/
-    PUT(st_heap_start + (1*WSIZE), PACK(DSIZE, 1));    /*Prologue header*/
-    PUT(st_heap_start + (2*WSIZE), PACK(DSIZE, 1));    /*Prologue footer*/
-    PUT(st_heap_start + (3*WSIZE), PACK(0, 1));        /*Epilogue header*/
+    PUT(st_heap_start + (1*WSIZE), PACK(DSIZE, 1, 1));    /*Prologue header*/
+    PUT(st_heap_start + (2*WSIZE), PACK(DSIZE, 1, 1));    /*Prologue footer*/
+    PUT(st_heap_start + (3*WSIZE), PACK(0, 1, 1));        /*Epilogue header*/
     st_heap_start += (2*WSIZE);
 
     /*Extend the empty heap with a free block of CHUNKSIZE bytes*/
@@ -391,9 +405,11 @@ void *mm_malloc(size_t size){
 void mm_free(void *bp){
 
     size_t size = GET_SIZE(HDRP(bp));
+    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
 
-    PUT(HDRP(bp), PACK(size, 0));
-    PUT(FTRP(bp), PACK(size, 0));
+    PUT(HDRP(bp), PACK(size, prev_alloc, 0));
+    PUT(FTRP(bp), PACK(size, prev_alloc, 0));
+    CLEAR_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
     coalesce(bp);
 }
 
@@ -430,61 +446,64 @@ void *mm_realloc(void *bp, size_t size){
 
     if (!next_alloc && (total_size >= asize)){
         removeNode(next_bp);
+        PUT(HDRP(bp), PACK(total_size, GET_PREV_ALLOC(HDRP(bp)), 1));
         split_block(bp, asize, total_size);
         return bp;
     }
 
-    /*if prev block is empty*/
-    size_t prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
-    size_t prev_size = prev_alloc ? 0 : GET_SIZE(FTRP(PREV_BLKP(bp)));
+    /*If end of heap*/
 
-    if (!prev_alloc && (prev_size + old_size >= asize)){
-        void *prev_bp = PREV_BLKP(bp);
-        removeNode(prev_bp);
+    if (GET_SIZE(HDRP(next_bp)) == 0){
+        size_t extend_size = asize - old_size;
+        if (extend_heap(extend_size / WSIZE) == NULL) return NULL;
 
-        memmove(prev_bp, bp, old_size - DSIZE);
-
-        split_block(prev_bp, asize, prev_size + old_size);
-        return prev_bp;
-    }
-
-    /*if prev and next is empty, and have to get all of them*/
-    if (!prev_alloc && !next_alloc && (prev_size + old_size + next_size >= asize)) {
-        void *prev_bp = PREV_BLKP(bp);
-        removeNode(prev_bp);
-        removeNode(next_bp);
-        
-        memmove(prev_bp, bp, old_size - DSIZE);
-        
-        split_block(prev_bp, asize, prev_size + old_size + next_size);
-        return prev_bp;
-    }
-
-    /*end of heap*/
-    int is_last_alloc = (next_size == 0) || (!next_alloc && GET_SIZE(HDRP(NEXT_BLKP(next_bp))) == 0);
-
-    if (is_last_alloc) {
-        size_t current_total = (!next_alloc) ? total_size : old_size;
-        size_t extend_size = asize - current_total;
-        
-        void *new_free_bp = extend_heap(extend_size / WSIZE);
-        if (new_free_bp == NULL) return NULL;
-        
-        // extend_heap이 눈치껏 뒷방(next_bp)과 새 공간을 합쳐서 리턴했으므로 한 번만 빼면 됩니다.
-        removeNode(new_free_bp); 
-        
-        size_t real_free_size = GET_SIZE(HDRP(new_free_bp));
-        size_t final_total = old_size + real_free_size;
-        
+        void *new_free_bp = NEXT_BLKP(bp);
+        removeNode(new_free_bp);
+        size_t final_total = old_size + GET_SIZE(HDRP(new_free_bp));
+        PUT(HDRP(bp), PACK(final_total, GET_PREV_ALLOC(HDRP(bp)), 1));
         split_block(bp, asize, final_total);
         return bp;
+    }
+
+    /*use prev block case*/
+    size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
+    if (!prev_alloc){
+        void *prev_bp = PREV_BLKP(bp);
+        size_t prev_size = GET_SIZE(HDRP(prev_bp));
+
+        if (prev_size + old_size >= asize){
+            size_t p_p_alloc = GET_PREV_ALLOC(HDRP(prev_bp));
+            removeNode(prev_bp);
+            memmove(prev_bp, bp, old_size - WSIZE);
+
+            bp = prev_bp;
+            size_t total_size = old_size + prev_size;
+            PUT(HDRP(bp), PACK(total_size, p_p_alloc, 1));
+            split_block(bp, asize, total_size);
+            return bp;
+        }
+        /*if we have to use prev and next*/
+        if (!next_alloc && (prev_size + old_size + next_size >= asize)) {
+            size_t p_p_alloc = GET_PREV_ALLOC(HDRP(prev_bp));
+            removeNode(prev_bp);
+            removeNode(next_bp);
+            memmove(prev_bp, bp, old_size - WSIZE);
+
+            bp = prev_bp;
+            size_t total_size = old_size + prev_size + next_size;
+
+            PUT(HDRP(bp), PACK(total_size, p_p_alloc, 1));
+            split_block(bp, asize, total_size);
+            return bp;
+        }
+
     }
 
     /*if none of the above case*/
     newptr = mm_malloc(size);
     if (newptr == NULL) return NULL;
 
-    copySize = old_size - DSIZE;
+    copySize = old_size - WSIZE;
     if (size < copySize) copySize = size;
     memcpy(newptr, oldptr, copySize);
     mm_free(oldptr);
