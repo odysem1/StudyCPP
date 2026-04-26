@@ -104,7 +104,7 @@
 
 - `place`: split_block 함수 적용
 
-## [v0.6] / 2026-04-25
+## [v0.6] / 2026-04-26
 
 ### Boundary tag optimization 구현, CHUNKSIZE 수정
 
@@ -119,3 +119,13 @@
 - `PACK, Heap_managemnet functions, mm_init`: 헤더 구조 변경으로 인한 PACK 매크로 변경, 그에 다른 코드 수정
 
 - `CHUNKSIZE`: util 점수 상승을 위해 크기 하향 조정(1>>12 -> 1>>10)
+
+## [v0.7] / 2026-04-26
+
+### Mini-block Singly linked list 구현, split_block 빈도 줄이기
+
+### Changed: get_size, insert/removeNode, find_fit, mm_free, realloc
+
+- `get_size, insert/removeNode, find_fit, mm_free`: 16바이트 미니 블럭은 footer를 없애고 singly linked list로 구현, if/else에 미니 블럭 케이스 추가
+
+- `mm_realloc`: 128바이트 이하로 남으면 블럭 split 없이 그대로 allocate, external fragmentation 감소 및 internal fragmentation 증가)

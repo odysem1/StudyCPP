@@ -57,6 +57,18 @@
 * `Solve`: 이전 블록을 보지 않고 계속해서 다음 블럭만 보니, 이전 블록이 free한 상태일 때를 고려하지 못해 계속해서 external fragmentation 발생
 * `Learned`: If/else로 케이스를 나누어 구현할 때 더욱 세심한 케이스 구분이 필요함
 
+### Issue 6: Singly linked list ghost footer - (v0.6)
+
+* `Problem`: 내부 단편화 해결을 위해 최소 할당 크기를 16바이트로 만들고 Singly linked list로 관리하도록 만들었는데, split_block 과정에서 16바이트 블록이 생성될 때 다음 블록의 PREV_ALLOC을 갱신하지 않아, extend_heap 호출 시 coalesce가 시도되고 존재하지 않는 푸터를 읽어 Heap의 잘못된 공간에 접근
+* `Solve`: 16바이트 블록은 Coalesce가 불가능하므로, 다음 블록의 PREV_ALLOC을 갱신하도록 수정
+* `Learned`: 미니 블록 구현 시 다른 블록들에게 완전히 할당된 블럭처럼 보이게 만들어야 하고, 그러지 않으면 Heap corruption으로 이어질 수 있다는 것을 깨달음.
+
+### Issue 7: External fragmentation - (v0.6)
+
+* `Problem`: Realloc에서 External fragmentation 발생
+* `Solve`: 128바이트 미만으로 남았을 시 블럭 분할 미실시로 의도적인 Internal fragmentation 발생시키기
+* `Learned`: External과 Internal fragmentation이 Trade-off 관계에 있음을 실감함
+
 ## Test result
 
 | Version | Strategy | Util | Thru | Total |

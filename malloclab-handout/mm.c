@@ -108,8 +108,8 @@ size_t get_size(size_t size);
 size_t get_size(size_t size) {
     size_t asize;
 
-    if (size <= DSIZE + WSIZE) {
-        asize = 2 * DSIZE;      
+    if (size <= WSIZE) {
+        asize = 2 * WSIZE;      
     } else{
         asize = DSIZE * ((size + WSIZE + (DSIZE - 1)) / DSIZE);
     }
@@ -148,9 +148,18 @@ int get_index(size_t size){
 * insertNode - put Free block in list of free blocks with appropriate size
 */
 static void insertNode(void *bp){
+    size_t size = GET_SIZE(HDRP(bp));
     int idx = get_index(GET_SIZE(HDRP(bp)));
     void **root_addr = GET_SEG_LIST(idx);
     void *free_listp = *root_addr;
+
+    /*mini block case*/
+    if (size == 2*WSIZE){
+        PUT_ADDR(bp, free_listp);
+        PUT_ADDR(root_addr, bp);
+        return;
+    }
+
     SET_NEXT_FREE(bp, free_listp);
     SET_PREV_FREE(bp, NULL);
 
@@ -164,8 +173,25 @@ static void insertNode(void *bp){
 * removeNode - remove Free block in free block list of idx
 */
 static void removeNode(void *bp){
+    size_t size = GET_SIZE(HDRP(bp));
     int idx = get_index(GET_SIZE(HDRP(bp)));
     void *root_addr = GET_SEG_LIST(idx);
+
+    /*mini block case*/
+    if (size == 2*WSIZE){
+        void *curr = GET_ADDR(root_addr);
+        if(curr == bp){
+            PUT_ADDR(root_addr, GET_ADDR(bp));
+        }else{
+            while(curr != NULL && GET_ADDR(curr) != bp){
+                curr = GET_ADDR(curr);
+            }
+            if (curr != NULL){
+                PUT_ADDR(curr, GET_ADDR(bp));
+            }
+        }
+        return;
+    }
 
     void *next_bp = GET_NEXT_FREE(bp);
     void *prev_bp = GET_PREV_FREE(bp);
@@ -198,15 +224,24 @@ static void place(void *bp, size_t asize);
 static void split_block(void *bp, size_t asize, size_t total_size){
 
     size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
-    if ((total_size - asize) >= (2 * DSIZE)) {
+    size_t remain_size = total_size - asize;
+
+    if (remain_size >= (2 * WSIZE)) {
         PUT(HDRP(bp), PACK(asize, prev_alloc, 1));
         
         void *remain_bp = NEXT_BLKP(bp);
-        PUT(HDRP(remain_bp), PACK(total_size - asize, 1, 0));
-        PUT(FTRP(remain_bp), PACK(total_size - asize, 1, 0));
-        CLEAR_PREV_ALLOC(HDRP(NEXT_BLKP(remain_bp)));
 
-        coalesce(remain_bp);
+        /*mini block case*/
+        if (remain_size == 16){
+            PUT(HDRP(remain_bp), PACK(16, 1, 0));
+            insertNode(remain_bp);
+            SET_PREV_ALLOC(HDRP(NEXT_BLKP(remain_bp)));
+        }else{
+            PUT(HDRP(remain_bp), PACK(total_size - asize, 1, 0));
+            PUT(FTRP(remain_bp), PACK(total_size - asize, 1, 0));
+            CLEAR_PREV_ALLOC(HDRP(NEXT_BLKP(remain_bp)));
+            coalesce(remain_bp);
+        }
     } else {
         PUT(HDRP(bp), PACK(total_size, prev_alloc, 1));
         SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
@@ -312,7 +347,11 @@ static void *find_fit(size_t asize){
                     best_bp = bp;
                 }
             }
-            bp = GET_NEXT_FREE(bp);
+            if (block_size == 16){
+                bp = GET_ADDR(bp);
+            }else{
+                bp = GET_NEXT_FREE(bp);
+            }
         }
 
         if (best_bp != NULL){
@@ -407,6 +446,13 @@ void mm_free(void *bp){
     size_t size = GET_SIZE(HDRP(bp));
     size_t prev_alloc = GET_PREV_ALLOC(HDRP(bp));
 
+    /*mini block case*/
+    if (size == 2*WSIZE){
+        PUT(HDRP(bp), PACK(size, prev_alloc, 0));
+        insertNode(bp);
+        return;
+    }
+
     PUT(HDRP(bp), PACK(size, prev_alloc, 0));
     PUT(FTRP(bp), PACK(size, prev_alloc, 0));
     CLEAR_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
@@ -434,7 +480,9 @@ void *mm_realloc(void *bp, size_t size){
 
     /*if old size is ok*/
     if (old_size >= asize){
-        split_block(bp, asize, old_size);
+        if (old_size - asize >= 128){
+            split_block(bp, asize, old_size);
+        }
         return bp;
     }
 
@@ -447,7 +495,11 @@ void *mm_realloc(void *bp, size_t size){
     if (!next_alloc && (total_size >= asize)){
         removeNode(next_bp);
         PUT(HDRP(bp), PACK(total_size, GET_PREV_ALLOC(HDRP(bp)), 1));
-        split_block(bp, asize, total_size);
+        if (total_size - asize >= 128){
+            split_block(bp, asize, total_size);
+        }else{
+            SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+        }
         return bp;
     }
 
@@ -461,7 +513,11 @@ void *mm_realloc(void *bp, size_t size){
         removeNode(new_free_bp);
         size_t final_total = old_size + GET_SIZE(HDRP(new_free_bp));
         PUT(HDRP(bp), PACK(final_total, GET_PREV_ALLOC(HDRP(bp)), 1));
-        split_block(bp, asize, final_total);
+        if (final_total - asize >= 128){
+            split_block(bp, asize, final_total);
+        }else{
+            SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+        }
         return bp;
     }
 
@@ -479,7 +535,11 @@ void *mm_realloc(void *bp, size_t size){
             bp = prev_bp;
             size_t total_size = old_size + prev_size;
             PUT(HDRP(bp), PACK(total_size, p_p_alloc, 1));
-            split_block(bp, asize, total_size);
+            if (total_size - asize >= 128){
+                split_block(bp, asize, total_size);
+            }else{
+                SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+            }
             return bp;
         }
         /*if we have to use prev and next*/
@@ -493,7 +553,11 @@ void *mm_realloc(void *bp, size_t size){
             size_t total_size = old_size + prev_size + next_size;
 
             PUT(HDRP(bp), PACK(total_size, p_p_alloc, 1));
-            split_block(bp, asize, total_size);
+            if (total_size - asize >= 128){
+                split_block(bp, asize, total_size);
+            }else{
+                SET_PREV_ALLOC(HDRP(NEXT_BLKP(bp)));
+            }
             return bp;
         }
 
