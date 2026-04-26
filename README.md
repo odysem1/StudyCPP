@@ -79,6 +79,7 @@
 | v0.4.1 | Segragated list (In-place Realloc & split) | 44 | 40 | 84 |
 | v0.5 | Segragated list (New Realloc & best-fit) | 46 | 40 | 84 |
 | v0.6 | Segragated list (Boundary tag optimization) | 47 | 40 | 84 |
+| v0.7 | Segragated list (Singly linked list, 128-split) | 52 | 40 | 92 |
 
 
 
