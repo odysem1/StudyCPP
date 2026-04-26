@@ -1,33 +1,28 @@
-# Custom C++ Memory Allocation(Malloc Lab C++ Refactoring)
+# Custom Memory Allocation(Malloc Lab Review)
 
 ## Project Summary
 
-군 복무 중 C++ 및 기초 이론을 복습하며 진행한 프로젝트입니다.
+군 복무 중 메모리 할당 기초 이론을 복습하며 진행한 프로젝트입니다.
 
-과거 학습했던 Malloc Lab을 처음부터 다시 구현한 이후, **Modern C++ 문법**을 이용해 리팩토링했습니다.
-C++를 이용해 만든 **Custom Memory Pool** 의 로우 레벨 동작을 이해하고 구현하는 것이 목표입니다.
+과거 학습했던 Malloc Lab을 그보다 발전시킨 알고리즘을 반영해 새로 구현했습니다.
+**Memory Pool** 의 로우 레벨 동작을 이해하고 구현하는 것이 목표입니다.
 
 **개발 기간:** 2026.04 ~ 2026.05
 
-**Built with:** C++23, C
-
-언리얼 엔진에서 사용하는 언어인 C++과 그를 이용한 메모리 관리의 원리를 이해하고 객체지향 설계에 익숙해지기 위해서 만들었습니다.
-
+**Built with:** C
 
 
 ## 구현 단계
 
 ### 1. Implicit/Explicit Free List
-* C로 기초 알고리즘을 전부 세워 놓은 다음 C++로 전환
+* C로 과거 구현했던 기초 알고리즘을 전부 세워 놓기
 * First-Fit/Best-Fit, Coalescing 기초 논리 C로 완성
 
-### 2. C++ Refactoring
-* 전역 변수로 관리되던 Heap 포인터와 함수를 class 내부로 숨김
-* void* 캐스팅 대신 *reinterpret_cast*를 적용해 타입 안전성을 높임
+### 2. Segregated Free List, Boundary tag optimization 구현
+* 더 발전된 알고리즘인 Segregated Free List 적용, 크기별로 블럭 구분
+* Boundary tag optimization으로 내부 단편화 최소화
 
-### 3. new/delete 오버로딩
-* 사용자가 'new' 키워드로 객체를 생성할 때 OS 내부가 아니라 새 클래스에서 메모리를 떼어주도록 전역/클래스 오버로딩을 적용함
-
+### 3. Singly linked list 구조 구현
 
 
 ## TroubleShooting
